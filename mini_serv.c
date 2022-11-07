@@ -29,60 +29,93 @@ void _send(int socket, int max, fd_set* in) {
 }
 
 int main(int ac, char** av) {
+	/* initalisation des variables. */
 	int			server_socket, client_socket, port, id = 0, max = 0;
-	fd_set		current, out, in;
+	fd_set		current, writefds, readfds;
 	
+	/* si le nombre d'argument n'est egal a 2, quitter le programme avec un code d'erreur egal a 1. */
 	if (ac != 2) {
 		write(2, "Wrong number of arguments\n", 26);
 		exit(1);
 	}
 
+	/* transformer le port de chaine de caractere a un nombre. */
 	port = atoi(av[1]);
+
+	/* intialise tous les structures clients. */
 	bzero(&clients, sizeof(clients));
+	
+	/* clear le fd set current. */
 	FD_ZERO(&current);
 
+	/* creer le socket et retourne une erreur si la creation n'a pas fonctionne. */
 	if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 		_err();
+
+
 	max = server_socket;
+	
+	/* ajoute le socket du serveur au fd set. */
 	FD_SET(server_socket, &current);
 
+	/* Setup de l'addresse sur la quelle bind le socket du serveur. */
 	struct sockaddr_in	addr;
 	socklen_t addr_len = sizeof(addr);
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(2130706433);
 	addr.sin_port = htons(port);
 
+	/* bind le socket du serveur sur l'addresse passe en parametre et met le socket en ecoute. renvoie une erreur sur une des deux etapes ne fonctionne pas. */
 	if (bind(server_socket, (const struct sockaddr *)&addr, sizeof(addr)) == -1 || listen(server_socket, 128) == -1)
 		_err();
 	
+	/* boucle infini pour toujours reste en ecoute. */
 	while (1) {
-		out = in = current;
+		readfds = writefds = current;
 
-		if (select(max + 1, &out, &in, NULL, NULL) == -1)
+		/* surveilles tous les descripteurs de fichier dans  */
+		if (select(max + 1, &readfds, &writefds, NULL, NULL) == -1)
 			continue;
-		
+
+		/* boucle sur tous les sockets jusqu'au socket maximum. */
 		for (int socket = 0; socket <= max; socket++) {
-			if (FD_ISSET(socket, &out) && socket == server_socket) {
+
+			/* regarde si le socket est dans le fd set et regarde si le socket est egal au socket du serveur. */
+			if (FD_ISSET(socket, &readfds) && socket == server_socket) {
+
+				/* accepte la premiere connexion dans la file d'attente. Si il echoue le programme passe au prochain socket. */
 				if ((client_socket = accept(server_socket, (struct sockaddr *)&addr, &addr_len)) == -1)
 					continue;
 				
+				/* si l'identifiant du socket client est plus grand que l'identifiant du socket maximum il met maximum a la valeur du socket client. */
 				if (client_socket > max) max = client_socket; 
+				/* defini l'id du client a id et incremente id. */
 				clients[client_socket].id = id++;
 
+				/* ajoute le socket client dans le fd set. */
 				FD_SET(client_socket, &current);
+
+				/* ecrit dans le buffer d'ecriture qu'un client vient d'arriver. */
 			 	sprintf(write_buf, "server: client %d just arrived\n", clients[client_socket].id);
-				_send(client_socket, max, &in);
+				
+				/* envoie a tous les clients ce qui est dans le buffer d'ecriture. */
+				_send(client_socket, max, &writefds);
+
 
 				break;
 			}
 			
-			if (FD_ISSET(socket, &out) && socket != server_socket) {
+			/* regarde si le socket est dans le fd set et que le socket n'est pas egal au socket du serveur. */
+			if (FD_ISSET(socket, &readfds) && socket != server_socket) {
+
+				/* recupere les octets du buffeur d'ecriture du socket correspondant.  */
 				int octets = recv(socket, read_buf, 110000, 0);
 				
+				/*  */
 				if (octets <= 0) {
 					sprintf(write_buf, "server: client %d just left\n", clients[socket].id);
 					
-					_send(socket, max, &in);
+					_send(socket, max, &writefds);
 					FD_CLR(socket, &current);
 
 					close(socket);
@@ -93,7 +126,7 @@ int main(int ac, char** av) {
 						if (clients[socket].msg[v] == '\n') {
 							clients[socket].msg[v] = '\0';
 							sprintf(write_buf, "client %d: %s\n", clients[socket].id, clients[socket].msg);
-							_send(socket, max, &in);
+							_send(socket, max, &writefds);
 							bzero(&clients[socket].msg, strlen(clients[socket].msg));
 							v = -1;
 						}
