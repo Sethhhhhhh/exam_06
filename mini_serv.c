@@ -9,23 +9,29 @@
 #include <sys/time.h>
 #include <sys/types.h>
 
+/* structure client qui contient l'id du client ainsi qu'une variable pour stocker ses messages. */
 typedef struct s_client {
 	int		id;
 	char	msg[100000];
 }				t_client;
 
+/* creer un tableau de clients (1024). */
 t_client	clients[1024];
+
+/* deux buffers pour l'ecriture et la lecture. */
 char	 	read_buf[110000], write_buf[110000];
 
 void	_err() {
+	/* ecrit un message sur la sortie d'erreur. */
 	write(2, "Fatal error\n", 12);
 	exit(1);
 }
 
 void _send(int socket, int max, fd_set* in) {
+	/* boucle sur chaque socket du fd set. */
     for (int i = 0; i <= max; i++)
-        if (FD_ISSET(i, in) && i != socket)
-            send(i, write_buf, strlen(write_buf), 0);
+        if (FD_ISSET(i, in) && i != socket) /* regarde si le socket est dans le fd set. */
+            send(i, write_buf, strlen(write_buf), 0); /* envoie au client le message dans le buffer write. */
 }
 
 int main(int ac, char** av) {
@@ -101,7 +107,6 @@ int main(int ac, char** av) {
 				/* envoie a tous les clients ce qui est dans le buffer d'ecriture. */
 				_send(client_socket, max, &writefds);
 
-
 				break;
 			}
 			
@@ -111,24 +116,36 @@ int main(int ac, char** av) {
 				/* recupere les octets du buffeur d'ecriture du socket correspondant.  */
 				int octets = recv(socket, read_buf, 110000, 0);
 				
-				/*  */
+				/* regarde si le nombre d'octets est inferieur ou egal a 0. */
 				if (octets <= 0) {
+					/* envoie qu'un joueur est partie dans le buffer write. */
 					sprintf(write_buf, "server: client %d just left\n", clients[socket].id);
-					
+
+					/* envoie ce qu'il y a dans le buffer write a tous les clients. */
 					_send(socket, max, &writefds);
+
+					/* supprime le socket du client qui est partie du fd set. */
 					FD_CLR(socket, &current);
 
+					/* ferme le socket. */
 					close(socket);
 				} else {
+					/* Boucle sur chaque caractere du message du client. */
 					for (int k = 0, v = strlen(clients[socket].msg); k < octets; k++, v++) {
+						/* copie caractere par caractere dans la structure du client. */
 						clients[socket].msg[v] = read_buf[k];
 
+						/* check si le caractere est un retour a la ligne. */
 						if (clients[socket].msg[v] == '\n') {
+							/* remplace le caractere par un \0. */
 							clients[socket].msg[v] = '\0';
+							/* copie le message du client dans le buffer write. */
 							sprintf(write_buf, "client %d: %s\n", clients[socket].id, clients[socket].msg);
+							/* transmet le message a tous les clients. */
 							_send(socket, max, &writefds);
+							
+							/* remplace tous les caracteres de msg dans la structure du client par des 0. */
 							bzero(&clients[socket].msg, strlen(clients[socket].msg));
-							v = -1;
 						}
 					}
 				}
